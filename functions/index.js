@@ -1,19 +1,53 @@
-/**
- * Import function triggers from their respective submodules:
- *
- * const {onCall} = require("firebase-functions/v2/https");
- * const {onDocumentWritten} = require("firebase-functions/v2/firestore");
- *
- * See a full list of supported triggers at https://firebase.google.com/docs/functions
- */
+const express = require('express');
+const admin = require('firebase-admin');
+const app = express();
+const port = process.env.PORT || 3000;
 
-const {onRequest} = require("firebase-functions/v2/https");
-const logger = require("firebase-functions/logger");
+const serviceAccount = require('./serviceAccountKey.json');
 
-// Create and deploy your first functions
-// https://firebase.google.com/docs/functions/get-started
+admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+});
 
-// exports.helloWorld = onRequest((request, response) => {
-//   logger.info("Hello logs!", {structuredData: true});
-//   response.send("Hello from Firebase!");
-// });
+const db = admin.firestore();
+
+let lastChecked = new Date(); // local memory; resets on restart
+
+app.get('/send-notifications', async (req, res) => {
+    try {
+        const snapshot = await db.collection('Assignment_Subjects')
+            .where('createdAt', '>', lastChecked)
+            .get();
+
+        if (snapshot.empty) {
+            lastChecked = new Date();
+            return res.send('No new assignments.');
+        }
+
+        const assignments = snapshot.docs.map(doc => doc.data());
+        const studentsSnapshot = await db.collection('Students').get();
+        const tokens = studentsSnapshot.docs.map(doc => doc.data().fcmToken).filter(Boolean);
+
+        const messages = assignments.map(a => ({
+            notification: {
+                title: `New Assignment: ${a.subjectName}`,
+                body: a.title || 'Check your dashboard!',
+            },
+            tokens: tokens
+        }));
+
+        for (const message of messages) {
+            await admin.messaging().sendMulticast(message);
+        }
+
+        lastChecked = new Date();
+        res.send(`${assignments.length} assignments processed.`);
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Error sending notifications.');
+    }
+});
+
+app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
+});
