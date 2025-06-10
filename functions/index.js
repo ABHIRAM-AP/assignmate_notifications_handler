@@ -11,16 +11,15 @@ admin.initializeApp({
 
 app.use(express.json());
 
-// Endpoint to add assignment and notify all students
+
 app.post('/add-assignment', async (req, res) => {
     const { title, body, dueDate } = req.body;
 
     try {
-        // Save assignment to Firestore (optional)
-        // await admin.firestore().collection('assignments').add({ title, body, dueDate });
+        
 
         // Get all student tokens from Firestore
-        const studentsSnapshot = await admin.firestore().collection('students').get();
+        const studentsSnapshot = await admin.firestore().collection('Students').get();
         const tokens = [];
         studentsSnapshot.forEach(doc => {
             const data = doc.data();
@@ -33,13 +32,13 @@ app.post('/add-assignment', async (req, res) => {
             return res.status(200).send({ success: false, message: 'No tokens found' });
         }
 
-        // Prepare message
+      
         const message = {
             notification: { title, body },
-            tokens: tokens, // Use 'tokens' for multicast
+            tokens: tokens, 
         };
 
-        // Send notification to all tokens
+
         const response = await admin.messaging().sendMulticast(message);
 
         res.status(200).send({ success: true, response });
