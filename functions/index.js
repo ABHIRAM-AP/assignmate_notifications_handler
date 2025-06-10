@@ -11,16 +11,37 @@ admin.initializeApp({
 
 app.use(express.json());
 
-app.post('/send-notification', async (req, res) => {
-    const { token, title, body } = req.body;
-
-    const message = {
-        notification: { title, body },
-        token,
-    };
+// Endpoint to add assignment and notify all students
+app.post('/add-assignment', async (req, res) => {
+    const { title, body, dueDate } = req.body;
 
     try {
-        const response = await admin.messaging().send(message);
+        // Save assignment to Firestore (optional)
+        // await admin.firestore().collection('assignments').add({ title, body, dueDate });
+
+        // Get all student tokens from Firestore
+        const studentsSnapshot = await admin.firestore().collection('students').get();
+        const tokens = [];
+        studentsSnapshot.forEach(doc => {
+            const data = doc.data();
+            if (data.fcmToken) {
+                tokens.push(data.fcmToken);
+            }
+        });
+
+        if (tokens.length === 0) {
+            return res.status(200).send({ success: false, message: 'No tokens found' });
+        }
+
+        // Prepare message
+        const message = {
+            notification: { title, body },
+            tokens: tokens, // Use 'tokens' for multicast
+        };
+
+        // Send notification to all tokens
+        const response = await admin.messaging().sendMulticast(message);
+
         res.status(200).send({ success: true, response });
     } catch (error) {
         res.status(500).send({ success: false, error: error.message });
