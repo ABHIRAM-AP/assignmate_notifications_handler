@@ -69,6 +69,3 @@ node_modules/
 .dataconnect
 
 
-# firebsae specific files
-/firebase.json
-/.firebaserc
