@@ -32,7 +32,7 @@ app.post('/add-assignment', async (req, res) => {
             return res.status(200).send({ success: false, message: 'No tokens found' });
         }
 
-      
+        console.log(tokens);
         const message = {
             notification: { title, body },
             tokens: tokens, 
