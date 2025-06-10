@@ -2,55 +2,76 @@ const express = require('express');
 const admin = require('firebase-admin');
 const app = express();
 
-// Load service account from secret path (Render)
+// Load Firebase service account key (from Render secret mount)
 const serviceAccount = require('/etc/secrets/serviceAccountKey.json');
 
 admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
+  credential: admin.credential.cert(serviceAccount),
 });
+
+const db = admin.firestore();
 
 app.use(express.json());
 
+// ✅ Route: Add Assignment and Send Notification
 app.post('/add-assignment', async (req, res) => {
-    const { title, body, dueDate } = req.body;
+  const { title, body, dueDate } = req.body;
 
-    try {
-        // Get all student tokens from Firestore
-        const studentsSnapshot = await admin.firestore().collection('Students').get();
-        const tokens = [];
-        studentsSnapshot.forEach(doc => {
-            const data = doc.data();
-            if (data.fcmToken) {
-                tokens.push(data.fcmToken);
-            }
-        });
+  if (!title || !body || !dueDate) {
+    return res.status(400).send({ success: false, message: 'Missing title, body, or dueDate' });
+  }
 
-        if (tokens.length === 0) {
-            return res.status(200).send({ success: false, message: 'No tokens found' });
-        }
+  try {
+    // Save assignment to Firestore
+    await db.collection('Assignment_Subjects').add({
+      title,
+      body,
+      dueDate,
+      createdAt: admin.firestore.FieldValue.serverTimestamp()
+    });
 
-        // Send notifications one by one
-        const results = [];
-        for (const token of tokens) {
-            const message = {
-                notification: { title, body },
-                token,
-            };
-            try {
-                const response = await admin.messaging().send(message);
-                results.push({ token, response });
-            } catch (error) {
-                results.push({ token, error: error.message });
-            }
-        }
+    // Fetch all student FCM tokens
+    const studentsSnapshot = await db.collection('Students').get();
+    const tokens = [];
 
-        res.status(200).send({ success: true, results });
-    } catch (error) {
-        res.status(500).send({ success: false, error: error.message });
+    studentsSnapshot.forEach(doc => {
+      const data = doc.data();
+      if (data.fcmToken) {
+        tokens.push(data.fcmToken);
+      }
+    });
+
+    if (tokens.length === 0) {
+      return res.status(200).send({ success: false, message: 'No FCM tokens found' });
     }
+
+    // Send a notification to each token
+    const results = [];
+    for (const token of tokens) {
+      const message = {
+        notification: {
+          title,
+          body
+        },
+        token
+      };
+
+      try {
+        const response = await admin.messaging().send(message);
+        results.push({ token, response });
+      } catch (error) {
+        results.push({ token, error: error.message });
+      }
+    }
+
+    return res.status(200).send({ success: true, results });
+  } catch (error) {
+    return res.status(500).send({ success: false, error: error.message });
+  }
 });
 
+// Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+  console.log(`Notification server running on port ${PORT}`);
 });
