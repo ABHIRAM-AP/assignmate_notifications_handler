@@ -13,21 +13,29 @@ const db = admin.firestore();
 
 app.use(express.json());
 
-// ✅ Route: Add Assignment and Send Notification
-app.post('/add-assignment', async (req, res) => {
-  const { title, body, dueDate } = req.body;
 
-  if (!title || !body || !dueDate) {
-    return res.status(400).send({ success: false, message: 'Missing title, body, or dueDate' });
+app.post('/add-assignment', async (req, res) => {
+  const { title, dueDate } = req.body;
+
+  if (!title || !dueDate) {
+    return res.status(400).send({ success: false, message: 'Missing title or dueDate' });
   }
 
   try {
+    // Parse due date to create notification body
+    const parsedDate = new Date(dueDate);
+    const formattedDate = parsedDate.toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+
+    const body = `Due on ${formattedDate}`;
+
     // Save assignment to Firestore
     await db.collection('Assignment_Subjects').add({
-      title,
-      body,
-      dueDate,
-      createdAt: admin.firestore.FieldValue.serverTimestamp()
+      Title: title,
+      Date: parsedDate,
     });
 
     // Fetch all student FCM tokens
@@ -45,15 +53,15 @@ app.post('/add-assignment', async (req, res) => {
       return res.status(200).send({ success: false, message: 'No FCM tokens found' });
     }
 
-    // Send a notification to each token
+    // Send notification to all tokens
     const results = [];
     for (const token of tokens) {
       const message = {
         notification: {
           title,
-          body
+          body,
         },
-        token
+        token,
       };
 
       try {
@@ -66,9 +74,11 @@ app.post('/add-assignment', async (req, res) => {
 
     return res.status(200).send({ success: true, results });
   } catch (error) {
+    console.error("Error in /add-assignment:", error);
     return res.status(500).send({ success: false, error: error.message });
   }
 });
+
 
 // Start server
 const PORT = process.env.PORT || 3000;
